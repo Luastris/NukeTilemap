@@ -17,7 +17,7 @@ reach the same component through reflection (Lua `atom:getComponent("Tilemap")`,
 - Tile DEFS live in `.nutile` JSON assets (texture atlas + per-tile cells / walkability /
   flags; multiple tile sets combine through a global id space) — a cell stores only the
   id, costs are functions of the def stack. The `.nutile` editor ships in the companion
-  [NukeTilemapEditor](../NukeTilemapEditor) module.
+  [NukeTilemapEditor](https://github.com/Luastris/NukeTilemapEditor) module.
 - The map lies in the atom's LOCAL XY plane (like Canvas): rotate the atom flat for a
   top-down ground or keep it vertical for a 2D side view. `cellSize` world units per
   cell.
