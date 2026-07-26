@@ -90,7 +90,7 @@ NUKETILEMAP_API uint32_t TileFlagMask(const std::string& name);
 
 class NUKETILEMAP_API Tilemap : public Component
 {
-	NUKE_CLASS(Tilemap, Component)
+	NUKE_CLASS(Tilemap, Component, "World")
 public:
 	static const int kChunk = 32;   // cells per chunk side (render bake granularity)
 
