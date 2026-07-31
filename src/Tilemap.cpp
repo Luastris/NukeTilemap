@@ -1,6 +1,5 @@
-// Tilemap implementation — data, defs, chunked render bake, serialization. See the header
-// for the model. Everything here is engine-API only (no renderer/backend types beyond the
-// iRender seam), so the module stays renderer-agnostic.
+// Tilemap implementation — data, defs, chunked render bake, serialization.
+// Engine-API only (iRender seam), so the module stays renderer-agnostic.
 #include <NukeTilemap/Tilemap.h>
 
 #include <interface/AppInstance.h>
@@ -20,7 +19,7 @@ using json = nlohmann::json;
 
 namespace nuke {
 
-// ---- flags ---------------------------------------------------------------------------------
+// ---- flags ----
 
 uint32_t TileFlagMask(const std::string& name)
 {
@@ -35,7 +34,7 @@ uint32_t TileFlagMask(const std::string& name)
 	return m;
 }
 
-// ---- tileset cache -------------------------------------------------------------------------
+// ---- tileset cache ----
 
 const TileDef* TileSet::Find(uint16_t id) const
 {
@@ -43,9 +42,8 @@ const TileDef* TileSet::Find(uint16_t id) const
 	return nullptr;
 }
 
-// .nutile files parse once per path; every Tilemap referencing the same set shares it.
-// The cache lives for the session (defs are tiny; textures are ResDB's problem). Entries
-// re-parse IN PLACE on InvalidateTileSet (std::map nodes are address-stable).
+// Session cache, one entry per .nutile path. Must stay a std::map: entries re-parse IN PLACE
+// on InvalidateTileSet and callers hold TileSet pointers, so nodes must be address-stable.
 static std::map<std::string, TileSet> g_tilesets;
 
 // Parse the file into `ts` (keeps path/version; resets everything else).
@@ -81,10 +79,9 @@ static bool ParseTileSetInto(TileSet& ts, const std::string& rel)
 			d.walk = (uint16_t)t.value("walk", 100);
 			if (t.contains("cells") && t["cells"].is_array())
 				for (const json& c : t["cells"]) d.cells.push_back(c.get<int>());
-			// An EXPLICIT empty "cells": [] = an INVISIBLE cost-only def (occupancy blockers:
-			// walk/flags apply, nothing bakes). Absent key keeps the cell-0 default.
+			// Explicit "cells": [] = invisible cost-only def; absent key keeps the cell-0 default.
 			if (d.cells.empty() && !t.contains("cells")) d.cells.push_back(0);
-			// Free-form atlas rects: [[x,y,w,h], [x,y,w,h,1], ...] — a 5th element = rotated 90° CW.
+			// rects: [[x,y,w,h], [x,y,w,h,1], ...] — a 5th element = rotated 90° CW.
 			if (t.contains("rects") && t["rects"].is_array())
 				for (const json& rj : t["rects"])
 					if (rj.is_array() && rj.size() >= 4)
@@ -121,7 +118,7 @@ void InvalidateTileSet(const std::string& contentRel)
 	++it->second.version;                 // live tilemaps rebake on their next frame
 }
 
-// ---- base64 (the data prop must be valid JSON text) ------------------------------------------
+// ---- base64 (the data prop must be valid JSON text) ----
 
 static const char kB64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -165,7 +162,7 @@ static std::vector<uint8_t> B64Decode(const std::string& in)
 	return out;
 }
 
-// ---- RLE over uint16 ids (maps are extremely uniform — grass compresses to nothing) ----------
+// ---- RLE over uint16 ids ----
 
 static void RleEncode16(const std::vector<uint16_t>& in, std::vector<uint8_t>& out)
 {
@@ -193,7 +190,7 @@ static bool RleDecode16(const uint8_t* p, size_t n, std::vector<uint16_t>& out, 
 	return out.size() == expect;
 }
 
-// ---- component -----------------------------------------------------------------------------
+// ---- component ----
 
 Tilemap::Tilemap() : Component("Tilemap") {}
 
@@ -202,7 +199,7 @@ void Tilemap::Init(Atom* parent)
 	atom = parent;
 	transform = &parent->GetTransform();
 	parent->components.push_back(this);
-	decoded = false;   // props (incl. `data`) are already loaded when Init runs — decode lazily
+	decoded = false;   // props (incl. `data`) are already loaded here — decode lazily
 }
 
 void Tilemap::Destroy() {}
@@ -214,7 +211,7 @@ void Tilemap::Setup(int w, int h, double cellSizeWorld)
 	layers.clear();
 	cost.clear(); costDirty = true;
 	chunks.clear(); chunksX = chunksY = 0;
-	decoded = true;   // a fresh map IS the live state now
+	decoded = true;
 }
 
 int Tilemap::AddLayer(const std::string& name)
@@ -309,8 +306,7 @@ Tilemap::Layer* Tilemap::GetLayer(int index)
 
 const TileSet* Tilemap::Defs() { EnsureSets(); return sets.empty() ? nullptr : sets[0]; }
 
-// Combined move cost: blocked if ANY layer's tile is walk 0; else the max walk over the
-// stack (empty cells contribute nothing; a fully empty cell = 100, plain ground).
+// Rebuild the combined cost grid: blocked if ANY layer's tile is walk 0, else max walk.
 void Tilemap::RebuildCost()
 {
 	EnsureSets();
@@ -360,8 +356,7 @@ bool Tilemap::HasFlag(int x, int y, const std::string& flag)
 	return false;
 }
 
-// Grid <-> world over the atom's LOCAL XY plane: cell (0,0)'s lower-left corner sits at the
-// atom's position; +x cells go along the atom's right, +y along its up.
+// World position of a cell CENTRE: +x runs along the atom's right, +y along its up.
 Vector3 Tilemap::CellToWorld(int x, int y)
 {
 	if (!transform) return Vector3(0, 0, 0);
@@ -388,8 +383,7 @@ int Tilemap::WorldToCellY(const Vector3& world)
 	return (int)std::floor(d / cellSize);
 }
 
-// Ray -> cell (6.7): intersect the map's plane (atom local XY: normal = right × up), then
-// project the hit into cell coords. Hits outside the grid or behind the origin = miss.
+// Intersect a world ray with the map plane; stores the hit in pickedX/Y. False = miss.
 bool Tilemap::PickCell(const Vector3& origin, const Vector3& dir)
 {
 	pickedX = pickedY = -1;
@@ -412,11 +406,11 @@ bool Tilemap::PickCell(const Vector3& origin, const Vector3& dir)
 int Tilemap::PickedX() { return pickedX; }
 int Tilemap::PickedY() { return pickedY; }
 
-// ---- serialization (the hidden `data` prop) ---------------------------------------------------
+// ---- serialization (the hidden `data` prop) ----
 
 void Tilemap::OnBeforeSave()
 {
-	if (!decoded) return;   // never touched since load — the prop already holds the state
+	if (!decoded) return;   // never decoded: the prop already holds the saved state
 	json root;
 	root["ver"] = 1;
 	root["w"] = width; root["h"] = height;
@@ -448,7 +442,7 @@ void Tilemap::EnsureDecoded()
 		std::cout << "[NukeTilemap]\tmap data decode FAILED (corrupt blob) — empty map" << std::endl;
 		return;
 	}
-	// The blob's dimensions win (props may have been edited independently in the file).
+	// The blob's dimensions win: the props may have been edited independently in the file.
 	width  = root.value("w", width);
 	height = root.value("h", height);
 	const size_t n = (size_t)width * height;
@@ -479,12 +473,11 @@ void Tilemap::EnsureDecoded()
 		}
 }
 
-// ---- rendering -------------------------------------------------------------------------------
+// ---- rendering ----
 
 void Tilemap::EnsureSets()
 {
-	// Effective path list: `tilesets`; a pre-multiset map carries only the legacy `tileset`
-	// prop — merged in as set 0 so old maps and old game code keep working unchanged.
+	// Legacy maps carry only `tileset` — merge it in as set 0.
 	std::vector<std::string> want = tilesets;
 	if (want.empty() && !tileset.empty()) want.push_back(tileset);
 	if ((int)want.size() > kMaxSets)
@@ -495,10 +488,8 @@ void Tilemap::EnsureSets()
 		want.resize(kMaxSets);
 	}
 
-	// Texture may resolve late (content registers after the component on cold boot).
-	// GuidForContentPath: texPath is content-relative, ResDB keys are scan/import forms.
-	// The lookup has a linear normalized fallback -> THROTTLED retry (a permanently missing
-	// texture must not cost a registry sweep every frame), and the warning fires ONCE per set.
+	// Textures may resolve late (content registers after the component on cold boot).
+	// GuidForContentPath falls back to a linear sweep, so callers must throttle the retry.
 	auto resolveTex = [this](const std::string& path, bool first)
 	{
 		auto it = g_tilesets.find(path);
@@ -528,7 +519,7 @@ void Tilemap::EnsureSets()
 		for (ChunkBake& c : chunks) c.dirty = true;   // a new set list invalidates every bake
 		costDirty = true;
 	}
-	// Throttled late-texture retry for any still-unresolved set (diffuse or normal).
+	// Throttled retry for any still-unresolved set (diffuse or normal).
 	bool missing = false;
 	for (const TileSet* s : sets)
 		if (s && (!s->tex || (!s->normalPath.empty() && !s->normalTex))) { missing = true; break; }
@@ -595,9 +586,8 @@ void Tilemap::MarkCell(int x, int y)
 		chunks[(size_t)cy * chunksX + cx].dirty = true;
 }
 
-// Bake one chunk: per layer, a quad per non-empty cell in the sprite batch's exact vertex
-// layout (9 floats: pos, uv, tint). World-space verts snapshot the atom's transform — a
-// moved/rotated map rebakes everything (maps are static in practice).
+// Bake one chunk: a quad per non-empty cell in the sprite batch's exact vertex layout
+// (9 floats: pos, uv, tint). Verts are WORLD-space, so a moved atom must rebake.
 void Tilemap::BakeChunk(int cx, int cy)
 {
 	ChunkBake& ch = chunks[(size_t)cy * chunksX + cx];
@@ -620,7 +610,6 @@ void Tilemap::BakeChunk(int cx, int cy)
 				const size_t i = (size_t)y * width + x;
 				const uint16_t id = l.id[i];
 				if (!id) continue;
-				// Global id -> owning set (its texture is this quad's run) + its local def.
 				const size_t si = (size_t)(id >> kSetShift);
 				if (si >= setCount) continue;
 				const TileSet* set = sets[si];
@@ -630,8 +619,7 @@ void Tilemap::BakeChunk(int cx, int cy)
 				if (!d) continue;
 				if (d->rects.empty() && d->cells.empty()) continue;   // invisible cost-only def
 				std::vector<float>& out = ch.layerVerts[li * setCount + si];
-				// Per-corner UVs: TL/TR/BR/BL of the tile's VISUAL. Grid cells and free-form
-				// rects both reduce to these four pairs; a rotated rect permutes them.
+				// Per-corner UVs: TL/TR/BR/BL of the tile's visual.
 				float uTL, vTL, uTR, vTR, uBR, vBR, uBL, vBL;
 				if (!d->rects.empty())
 				{
@@ -646,8 +634,7 @@ void Tilemap::BakeChunk(int cx, int cy)
 					}
 					else
 					{
-						// Stored rotated 90° CW: the page rect spans w=rc.h, h=rc.w. Original
-						// pixel (px,py) sits at page (x + h - py, y + px) — invert per corner.
+						// Stored rotated 90° CW: the page rect spans w=rc.h, h=rc.w.
 						const float pu0 = rc.x / tw, pu1 = (rc.x + rc.h) / tw;
 						const float pv0 = rc.y / th, pv1 = (rc.y + rc.w) / th;
 						uTL = pu1; vTL = pv0; uTR = pu1; vTR = pv1; uBR = pu0; vBR = pv1; uBL = pu0; vBL = pv0;
@@ -661,7 +648,6 @@ void Tilemap::BakeChunk(int cx, int cy)
 					uTL = u0; vTL = v0; uTR = u1; vTR = v0; uBR = u1; vBR = v1; uBL = u0; vBL = v1;
 				}
 
-				// Cell corners on the atom's local XY plane (world space).
 				const double bx = x * cs, by = y * cs;
 				auto corner = [&](double ox, double oy, float u, float v)
 				{
@@ -689,7 +675,7 @@ void Tilemap::OnRender(iRender* r, RenderPhase phase)
 	if (!anyTex || layers.empty()) return;
 	EnsureChunks();
 
-	// Transform snapshot: baked verts are world-space, so a moved/rotated map rebakes.
+	// Baked verts are world-space: a moved/rotated map must rebake.
 	{
 		Vector3 p = transform->globalPosition();
 		Quaternion q = transform->globalRotation();
@@ -701,7 +687,7 @@ void Tilemap::OnRender(iRender* r, RenderPhase phase)
 			for (ChunkBake& c : chunks) c.dirty = true;
 		}
 	}
-	// Tile-set hot-reload (the .nutile editor saved): new defs/atlas -> rebake + recost.
+	// Tile-set hot-reload: new defs/atlas -> rebake + recost.
 	{
 		bool bumped = bakedSetVersions.size() != sets.size();
 		if (!bumped)
@@ -716,8 +702,7 @@ void Tilemap::OnRender(iRender* r, RenderPhase phase)
 		}
 	}
 
-	// Frustum cull per chunk: the chunk's 4 plane corners against the camera's clip volume
-	// (same clip-space test World's FrustumCull uses; the plane has no thickness).
+	// Frustum cull per chunk: the chunk's 4 plane corners against the camera's clip volume.
 	float view[16], proj[16];
 	r->getViewProj(view, proj);
 	Vector3 P = transform->globalPosition(), R = transform->right(), U = transform->up();
@@ -753,8 +738,7 @@ void Tilemap::OnRender(iRender* r, RenderPhase phase)
 		return !(outL == 4 || outR == 4 || outB == 4 || outT == 4 || outN == 4 || outF == 4);
 	};
 
-	// Layer sweeps preserve paint order (terrain under floor under things) across chunks;
-	// inside a layer, one run per SET texture (consecutive same-texture runs = one draw).
+	// Sweep by layer first: paint order must hold across chunks, one run per set texture.
 	const size_t setCount = sets.size();
 	int visChunks = 0, sentVerts = 0;
 	for (size_t li = 0; li < layers.size(); ++li)
@@ -782,7 +766,6 @@ void Tilemap::OnRender(iRender* r, RenderPhase phase)
 					}
 				}
 		}
-	// Draw-path diagnostics (NUKE_TM_DIAG=1): what the cull kept and what reached the batch.
 	static const bool diag = []{ const char* e = std::getenv("NUKE_TM_DIAG"); return e && *e == '1'; }();
 	if (diag)
 	{

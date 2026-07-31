@@ -1,6 +1,4 @@
-// NukeTilemap — the grid-world module (Phase 6.4). A SEPARATE module by design: colony
-// sims / roguelikes / strategy load it; everyone else never pays for it. See
-// include/NukeTilemap/Tilemap.h for the model.
+// NukeTilemap module entry point. See include/NukeTilemap/Tilemap.h for the model.
 #include <NukeTilemap/Tilemap.h>
 
 #include <interface/NUKEEInteface.h>
@@ -10,9 +8,7 @@
 
 using namespace nuke;
 
-// nukegen (module mode): reflection registration for the Tilemap component — generated
-// into NukeTilemap.gen.inc by the CMake prebuild, #included IN-TU so member pointers
-// resolve against the class definition above.
+// nukegen output — must be included IN-TU so member pointers resolve against the class above.
 #include "NukeTilemap.gen.inc"   // defines NukeReflectInit_NukeTilemap()
 
 class NukeTilemapModule : public NUKEModule
@@ -30,8 +26,6 @@ public:
 	{
 		NukeReflectInit_NukeTilemap();   // Tilemap becomes Add Component-able / scriptable
 
-		// .nutile: a plain-JSON tile-set definition (texture atlas + per-tile defs).
-		// Text-editable with JSON highlighting; New > Tiles > Tile Set.
 		AssetCreator ac;
 		ac.label    = "Tile Set";
 		ac.ext      = ".nutile";

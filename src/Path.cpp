@@ -1,10 +1,5 @@
-// Grid A* (Phase 6.5) — the pathfinding half of the NukeTilemap module.
-//
-// Requests snapshot the COST GRID on the game thread (memcpy, ~125 KB at 250×250) and solve
-// on the shared nuke::Jobs pool with no locks against the live map: the result reflects the
-// map as of the request, which is the honest contract for a moving world (pawns re-path when
-// a wall appears in their face). 8-way movement with a no-corner-cut rule, octile heuristic
-// over the per-cell move costs (100 = plain ground), collinear waypoint compression.
+// Grid A* for NukeTilemap. Requests snapshot the cost grid on the game thread and solve on
+// the nuke::Jobs pool, so a solve never locks against the live map.
 #include <NukeTilemap/Tilemap.h>
 #include <API/Model/Jobs.h>
 
@@ -36,8 +31,8 @@ boost::mutex g_pathMutex;   // registry only — the solve itself touches just i
 std::map<long long, std::shared_ptr<PathRequest>> g_paths;
 long long g_nextPathId = 1;
 
-// Binary-heap A*. Grid costs are "per cell entered" (100 = normal); a diagonal entry pays
-// cost × √2. Returns waypoints START..GOAL inclusive, collinear runs compressed.
+// Binary-heap A*. Grid costs are per cell entered (100 = normal), diagonals pay cost × √2.
+// Fills r.points with START..GOAL inclusive, collinear runs compressed. False = no route.
 bool Solve(PathRequest& r)
 {
 	const int w = r.w, h = r.h;
@@ -47,8 +42,7 @@ bool Solve(PathRequest& r)
 	if (blocked(r.x0, r.y0) || blocked(r.x1, r.y1)) return false;
 	if (r.x0 == r.x1 && r.y0 == r.y1) { r.points.push_back({ r.x0, r.y0 }); r.cost = 0; return true; }
 
-	// g/parent/closed per cell in ONE arena allocation — many concurrent solves on the pool
-	// would otherwise serialize on the (Debug) allocator lock with per-array allocations.
+	// g/parent/closed share ONE arena: concurrent solves would serialize on the allocator lock.
 	const uint32_t kInf = 0xFFFFFFFFu;
 	std::unique_ptr<uint8_t[]> arena(new uint8_t[n * (sizeof(uint32_t) + sizeof(int32_t) + 1)]);
 	uint32_t* g      = (uint32_t*)arena.get();
@@ -63,7 +57,7 @@ bool Solve(PathRequest& r)
 	auto hpush = [&](Node nd) { heap.push_back(nd); std::push_heap(heap.begin(), heap.end(), Less{}); };
 	auto hpop  = [&]() { std::pop_heap(heap.begin(), heap.end(), Less{}); Node nd = heap.back(); heap.pop_back(); return nd; };
 
-	// Octile heuristic scaled to the 100-per-cell cost base (admissible: 100 = min cell cost).
+	// Octile heuristic scaled to the 100-per-cell base (admissible: 100 = min cell cost).
 	auto heur = [&](int x, int y) -> uint32_t
 	{
 		const int dx = std::abs(x - r.x1), dy = std::abs(y - r.y1);
@@ -104,7 +98,6 @@ bool Solve(PathRequest& r)
 	}
 	if (g[goal] == kInf) return false;
 
-	// Walk back, then reverse + compress collinear runs (keep direction changes only).
 	std::vector<std::pair<int, int>> rev;
 	for (int32_t i = (int32_t)goal; i != -1; i = parent[i])
 		rev.push_back({ (int)(i % w), (int)(i / w) });
