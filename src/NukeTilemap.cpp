@@ -3,6 +3,7 @@
 
 #include <interface/NUKEEInteface.h>
 #include <interface/AssetCreators.h>
+#include <interface/IconsFileTypes.h>
 #include <iostream>
 #include <cstring>
 
@@ -31,7 +32,7 @@ public:
 		ac.ext      = ".nutile";
 		ac.baseName = "New Tile Set";
 		ac.category = "Tiles";
-		ac.icon     = "î¦¬";   // ICON_LC_GRID_3X3 (raw UTF-8 - no ImGui header needed)
+		ac.icon     = ICON_FT_TILEMAP;
 		ac.textEditable   = true;
 		ac.syntaxLanguage = "json";
 		ac.content =
