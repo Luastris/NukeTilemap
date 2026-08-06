@@ -13,14 +13,15 @@ set(VCPKG_INSTALLED "$ENV{VCPKG_ROOT}/installed/x64-windows")   # VCPKG_ROOT env
 
 # Reflection prebuild (nukegen module mode): scans the public header for NUKE_CLASS +
 # [[nuke::prop/func]] and generates the in-TU registration include.
-find_package(Python3 COMPONENTS Interpreter)
+set(NUKE_GEN "${NUKE_ROOT}/NukeUtils/bin/NukeGen.exe")   # built FIRST by the superbuild
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/src/NukeTilemap.gen.inc"
-    COMMAND ${Python3_EXECUTABLE} "${NUKE_ROOT}/NukeUtils/nukegen.py"
+    COMMAND "${NUKE_GEN}"
             --include "${CMAKE_CURRENT_SOURCE_DIR}/include"
             --out "${CMAKE_CURRENT_SOURCE_DIR}/src/NukeTilemap.gen.inc"
             --init NukeReflectInit_NukeTilemap --no-includes
-    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/include/NukeTilemap/Tilemap.h"
+            --sdk "${NUKE_ROOT}/NukeUtils/sdk/nukesdk/NukeTilemap.sdk.h" --doc "${NUKE_ROOT}/NukeUtils/sdkdocs/NukeTilemap.md"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/include/NukeTilemap/Tilemap.h" "${NUKE_GEN}"
     COMMENT "nukegen: NukeTilemap reflection")
 
 add_library(NukeTilemap SHARED
