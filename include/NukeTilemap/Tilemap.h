@@ -11,10 +11,14 @@
 #include <vector>
 #include <cstdint>
 
-#ifdef NUKETILEMAP_EXPORTS
-#define NUKETILEMAP_API __declspec(dllexport)
+#ifdef _WIN32
+  #ifdef NUKETILEMAP_EXPORTS
+  #define NUKETILEMAP_API __declspec(dllexport)
+  #else
+  #define NUKETILEMAP_API __declspec(dllimport)
+  #endif
 #else
-#define NUKETILEMAP_API __declspec(dllimport)
+  #define NUKETILEMAP_API __attribute__((visibility("default")))
 #endif
 
 namespace nuke {
